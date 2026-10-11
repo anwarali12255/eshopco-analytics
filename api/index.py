@@ -1,65 +1,37 @@
-import json
-from pathlib import Path
-
-import numpy as np
+```python
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 app = FastAPI()
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Expose-Headers": "Access-Control-Allow-Origin",
+}
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["Access-Control-Allow-Origin"],
 )
 
-DATA_PATH = Path(__file__).with_name("q-vercel-latency.json")
 
-with DATA_PATH.open() as f:
-    TELEMETRY = json.load(f)
-
-
-class AnalyticsRequest(BaseModel):
-    regions: list[str]
-    threshold_ms: float
+@app.get("/")
+def home():
+    return {"message": "API is running"}
 
 
-@app.post("/analytics")
-def analytics(request: AnalyticsRequest):
-    result = {}
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-    for region in request.regions:
-        records = [
-            record
-            for record in TELEMETRY
-            if record.get("region") == region
-        ]
 
-        if not records:
-            result[region] = {
-                "avg_latency": None,
-                "p95_latency": None,
-                "avg_uptime": None,
-                "breaches": 0,
-            }
-            continue
-
-        latencies = np.array(
-            [record["latency_ms"] for record in records],
-            dtype=float,
-        )
-        uptimes = np.array(
-            [record["uptime"] for record in records],
-            dtype=float,
-        )
-
-        result[region] = {
-            "avg_latency": float(np.mean(latencies)),
-            "p95_latency": float(np.percentile(latencies, 95)),
-            "avg_uptime": float(np.mean(uptimes)),
-            "breaches": int(np.sum(latencies > request.threshold_ms)),
-        }
-
-    return result
+@app.post("/api")
+def api_endpoint():
+    return {"message": "POST request successful"}
+```
