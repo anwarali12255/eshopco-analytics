@@ -5,23 +5,19 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi.responses import Response
 
 app = FastAPI()
 
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    if request.method == "OPTIONS":
-        response = Response(status_code=200)
-    else:
-        response = await call_next(request)
+# Allow POST requests from any origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-
-    return response
-
+# Load telemetry data from the JSON file in the project root
 DATA_FILE = Path(__file__).resolve().parent.parent / "q-vercel-latency.json"
 
 with open(DATA_FILE, "r", encoding="utf-8") as file:
@@ -55,7 +51,8 @@ def analytics(request: AnalyticsRequest):
 
     for region in request.regions:
         region_records = [
-            record for record in records
+            record
+            for record in records
             if record["region"] == region
         ]
 
@@ -69,11 +66,13 @@ def analytics(request: AnalyticsRequest):
             continue
 
         latencies = [
-            record["latency_ms"] for record in region_records
+            record["latency_ms"]
+            for record in region_records
         ]
 
         uptimes = [
-            record["uptime_pct"] for record in region_records
+            record["uptime_pct"]
+            for record in region_records
         ]
 
         results[region] = {
