@@ -1,34 +1,24 @@
-
 import json
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI()
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Expose-Headers": "Access-Control-Allow-Origin",
-}
-
-# Allow POST requests from any origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load telemetry data from the JSON file in the project root
-DATA_FILE = Path(__file__).resolve().parent.parent / "q-vercel-latency.json"
+DATA_PATH = Path(__file__).with_name("q-vercel-latency.json")
 
-with open(DATA_FILE, "r", encoding="utf-8") as file:
-    records = json.load(file)
+with DATA_PATH.open() as f:
+    TELEMETRY = json.load(f)
 
 
 class AnalyticsRequest(BaseModel):
@@ -36,61 +26,40 @@ class AnalyticsRequest(BaseModel):
     threshold_ms: float
 
 
-def percentile_95(values):
-    values = sorted(values)
-
-    if len(values) == 1:
-        return values[0]
-
-    position = (len(values) - 1) * 0.95
-    lower = int(position)
-    upper = min(lower + 1, len(values) - 1)
-    fraction = position - lower
-
-    return values[lower] + fraction * (
-        values[upper] - values[lower]
-    )
-
-
-@app.post("/")
+@app.post("/analytics")
 def analytics(request: AnalyticsRequest):
-    results = {}
+    result = {}
 
     for region in request.regions:
-        region_records = [
+        records = [
             record
-            for record in records
-            if record["region"] == region
+            for record in TELEMETRY
+            if record.get("region") == region
         ]
 
-        if not region_records:
-            results[region] = {
-                "avg_latency": 0,
-                "p95_latency": 0,
-                "avg_uptime": 0,
+        if not records:
+            result[region] = {
+                "avg_latency": None,
+                "p95_latency": None,
+                "avg_uptime": None,
                 "breaches": 0,
             }
             continue
 
-        latencies = [
-            record["latency_ms"]
-            for record in region_records
-        ]
+        latencies = np.array(
+            [record["latency_ms"] for record in records],
+            dtype=float,
+        )
+        uptimes = np.array(
+            [record["uptime"] for record in records],
+            dtype=float,
+        )
 
-        uptimes = [
-            record["uptime_pct"]
-            for record in region_records
-        ]
-
-        results[region] = {
-            "avg_latency": sum(latencies) / len(latencies),
-            "p95_latency": percentile_95(latencies),
-            "avg_uptime": sum(uptimes) / len(uptimes),
-            "breaches": sum(
-                latency > request.threshold_ms
-                for latency in latencies
-            ),
+        result[region] = {
+            "avg_latency": float(np.mean(latencies)),
+            "p95_latency": float(np.percentile(latencies, 95)),
+            "avg_uptime": float(np.mean(uptimes)),
+            "breaches": int(np.sum(latencies > request.threshold_ms)),
         }
 
-    return results
-
+    return result
